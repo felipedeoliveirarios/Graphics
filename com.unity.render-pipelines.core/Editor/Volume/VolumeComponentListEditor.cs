@@ -206,20 +206,20 @@ namespace UnityEditor.Rendering
                 asset.isDirty = false;
             }
 
-            bool isEditable = !VersionControl.Provider.isActive
+            var isEditable = !VersionControl.Provider.isActive
                 || AssetDatabase.IsOpenForEdit(asset, StatusQueryOptions.UseCachedIfPossible);
 
             using (new EditorGUI.DisabledScope(!isEditable))
             {
                 // Component list
-                for (int i = 0; i < m_Editors.Count; i++)
+                for (var i = 0; i < m_Editors.Count; i++)
                 {
                     var editor = m_Editors[i];
-                    string title = editor.GetDisplayTitle();
-                    int id = i; // Needed for closure capture below
+                    var title = editor.GetDisplayTitle();
+                    var id = i; // Needed for closure capture below
 
                     CoreEditorUtils.DrawSplitter();
-                    bool displayContent = CoreEditorUtils.DrawHeaderToggle(
+                    var displayContent = CoreEditorUtils.DrawHeaderToggle(
                             title,
                             editor.baseProperty,
                             editor.activeProperty,

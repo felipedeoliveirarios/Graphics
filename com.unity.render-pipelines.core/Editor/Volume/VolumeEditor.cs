@@ -1,3 +1,5 @@
+using NUnit.Framework;
+using UnityEditor.VersionControl;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -6,6 +8,16 @@ namespace UnityEditor.Rendering
     [CustomEditor(typeof(Volume))]
     sealed class VolumeEditor : Editor
     {
+        static class Styles
+        {
+            public static readonly GUIContent labelProfile = EditorGUIUtility.TrTextContent("Profile", "A reference to a profile asset.");
+            public static readonly GUIContent labelProfileInstance = EditorGUIUtility.TrTextContent("Profile (Instance)", "A copy of a profile asset.");
+            public static readonly GUIContent iconNew = EditorGUIUtility.TrIconContent("CreateAddNew", "Create a new profile.");
+            public static readonly GUIContent iconSaveAs = EditorGUIUtility.TrIconContent("SaveAs", "Save the instantiated profile");
+            public static readonly GUIContent iconClone = EditorGUIUtility.TrIconContent("TreeEditor.Duplicate", "Create a new profile and copy the content of the currently assigned profile.");
+            public static readonly GUIContent iconCheckout = EditorGUIUtility.TrIconContent("editicon.sml", "Checkout the profile to enable edition.");
+        }
+
         SerializedProperty m_IsGlobal;
         SerializedProperty m_BlendRadius;
         SerializedProperty m_Weight;
@@ -86,27 +98,39 @@ namespace UnityEditor.Rendering
             EditorGUILayout.PropertyField(m_Weight);
             EditorGUILayout.PropertyField(m_Priority);
 
-            bool assetHasChanged = false;
-            bool showCopy = m_Profile.objectReferenceValue != null;
-            bool multiEdit = m_Profile.hasMultipleDifferentValues;
+            var assetHasChanged = false;
+            var assetIsNotNull = m_Profile.objectReferenceValue != null && !m_Profile.objectReferenceValue.Equals(null);
+            var assetIsMultiEdit = m_Profile.hasMultipleDifferentValues;
+            var enableSaveOrClone = assetIsNotNull;
+            var enableCheckout = VersionControl.Provider.isActive
+                && !assetIsMultiEdit
+                && assetIsNotNull
+                && !AssetDatabase.IsOpenForEdit(m_Profile.objectReferenceValue, StatusQueryOptions.UseCachedIfPossible);
 
             // The layout system breaks alignment when mixing inspector fields with custom layout'd
             // fields, do the layout manually instead
-            int buttonWidth = showCopy ? 45 : 60;
-            float indentOffset = EditorGUI.indentLevel * 15f;
+
+            // Compute toolbar width and button styles
+            const int k_ButtonIconWidth = 30;
+            var toolbarWidth = k_ButtonIconWidth * 3;
+            var buttonNewStyle = EditorStyles.miniButton;
+            var buttonSaveOrCloneStyle = EditorStyles.miniButtonMid;
+            var buttonCheckoutStyle = EditorStyles.miniButtonRight;
+
+            // Compute the rect of each button
+            var indentOffset = EditorGUI.indentLevel * 15f;
             lineRect = EditorGUILayout.GetControlRect();
             var labelRect = new Rect(lineRect.x, lineRect.y, EditorGUIUtility.labelWidth - indentOffset, lineRect.height);
-            var fieldRect = new Rect(labelRect.xMax, lineRect.y, lineRect.width - labelRect.width - buttonWidth * (showCopy ? 2 : 1), lineRect.height);
-            var buttonNewRect = new Rect(fieldRect.xMax, lineRect.y, buttonWidth, lineRect.height);
-            var buttonCopyRect = new Rect(buttonNewRect.xMax, lineRect.y, buttonWidth, lineRect.height);
+            var fieldRect = new Rect(labelRect.xMax, lineRect.y, lineRect.width - labelRect.width - toolbarWidth, lineRect.height);
+            var buttonNewRect = new Rect(fieldRect.xMax, lineRect.y, k_ButtonIconWidth, lineRect.height);
+            var buttonSaveOrCloneRect = new Rect(buttonNewRect.xMax, lineRect.y, k_ButtonIconWidth, lineRect.height);
+            var buttonCheckOutRect = new Rect(buttonSaveOrCloneRect.xMax, lineRect.y, k_ButtonIconWidth, lineRect.height);
 
-            GUIContent guiContent;
-            if (actualTarget.HasInstantiatedProfile())
-                guiContent = EditorGUIUtility.TrTextContent("Profile (Instance)", "A copy of a profile asset.");
-            else
-                guiContent = EditorGUIUtility.TrTextContent("Profile", "A reference to a profile asset.");
+            // Draw the label
+            var guiContent = actualTarget.HasInstantiatedProfile() ? Styles.labelProfileInstance : Styles.labelProfile;
             EditorGUI.PrefixLabel(labelRect, guiContent);
 
+            // Draw the field
             using (var scope = new EditorGUI.ChangeCheckScope())
             {
                 EditorGUI.BeginProperty(fieldRect, GUIContent.none, m_Profile);
@@ -130,9 +154,10 @@ namespace UnityEditor.Rendering
                 EditorGUI.EndProperty();
             }
 
-            using (new EditorGUI.DisabledScope(multiEdit))
+            // Draw the toolbar
+            using (new EditorGUI.DisabledScope(assetIsMultiEdit))
             {
-                if (GUI.Button(buttonNewRect, EditorGUIUtility.TrTextContent("New", "Create a new profile."), showCopy ? EditorStyles.miniButtonLeft : EditorStyles.miniButton))
+                if (GUI.Button(buttonNewRect, Styles.iconNew, buttonNewStyle))
                 {
                     // By default, try to put assets in a folder next to the currently active
                     // scene file. If the user isn't a scene, put them in root instead.
@@ -144,36 +169,46 @@ namespace UnityEditor.Rendering
                     assetHasChanged = true;
                 }
 
-                if (actualTarget.HasInstantiatedProfile())
-                    guiContent = EditorGUIUtility.TrTextContent("Save", "Save the instantiated profile");
-                else
-                    guiContent = EditorGUIUtility.TrTextContent("Clone", "Create a new profile and copy the content of the currently assigned profile.");
-                if (showCopy && GUI.Button(buttonCopyRect, guiContent, EditorStyles.miniButtonRight))
+                guiContent = actualTarget.HasInstantiatedProfile() ? Styles.iconSaveAs : Styles.iconClone;
+                using (new EditorGUI.DisabledScope(!enableSaveOrClone))
                 {
-                    // Duplicate the currently assigned profile and save it as a new profile
-                    var origin = profileRef;
-                    var path = AssetDatabase.GetAssetPath(m_Profile.objectReferenceValue);
-                    path = AssetDatabase.GenerateUniqueAssetPath(path);
-
-                    var asset = Instantiate(origin);
-                    asset.components.Clear();
-                    AssetDatabase.CreateAsset(asset, path);
-
-                    foreach (var item in origin.components)
+                    if (GUI.Button(buttonSaveOrCloneRect, guiContent, buttonSaveOrCloneStyle))
                     {
-                        var itemCopy = Instantiate(item);
-                        itemCopy.hideFlags = HideFlags.HideInInspector | HideFlags.HideInHierarchy;
-                        itemCopy.name = item.name;
-                        asset.components.Add(itemCopy);
-                        AssetDatabase.AddObjectToAsset(itemCopy, asset);
+                        // Duplicate the currently assigned profile and save it as a new profile
+                        var origin = profileRef;
+                        var path = AssetDatabase.GetAssetPath(m_Profile.objectReferenceValue);
+                        path = AssetDatabase.GenerateUniqueAssetPath(path);
+
+                        var asset = Instantiate(origin);
+                        asset.components.Clear();
+                        AssetDatabase.CreateAsset(asset, path);
+
+                        foreach (var item in origin.components)
+                        {
+                            var itemCopy = Instantiate(item);
+                            itemCopy.hideFlags = HideFlags.HideInInspector | HideFlags.HideInHierarchy;
+                            itemCopy.name = item.name;
+                            asset.components.Add(itemCopy);
+                            AssetDatabase.AddObjectToAsset(itemCopy, asset);
+                        }
+
+                        AssetDatabase.SaveAssets();
+                        AssetDatabase.Refresh();
+
+                        m_Profile.objectReferenceValue = asset;
+                        actualTarget.profile = null; // Make sure we're not using an instantiated profile anymore
+                        assetHasChanged = true;
                     }
+                }
 
-                    AssetDatabase.SaveAssets();
-                    AssetDatabase.Refresh();
-
-                    m_Profile.objectReferenceValue = asset;
-                    actualTarget.profile = null; // Make sure we're not using an instantiated profile anymore
-                    assetHasChanged = true;
+                guiContent = Styles.iconCheckout;
+                using (new EditorGUI.DisabledScope(!enableCheckout))
+                {
+                    if (GUI.Button(buttonCheckOutRect, guiContent, buttonCheckoutStyle))
+                    {
+                        Assert.True(Provider.isActive);
+                        Provider.Checkout(m_Profile.objectReferenceValue, CheckoutMode.Both);
+                    }
                 }
             }
 
@@ -193,7 +228,7 @@ namespace UnityEditor.Rendering
                     RefreshEffectListEditor(profileRef);
                 }
 
-                if (!multiEdit)
+                if (!assetIsMultiEdit)
                 {
                     m_ComponentList.OnGUI();
                     EditorGUILayout.Space();

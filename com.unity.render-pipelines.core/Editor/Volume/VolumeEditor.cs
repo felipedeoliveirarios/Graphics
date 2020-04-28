@@ -16,6 +16,7 @@ namespace UnityEditor.Rendering
             public static readonly GUIContent iconSaveAs = EditorGUIUtility.TrIconContent("SaveAs", "Save the instantiated profile");
             public static readonly GUIContent iconClone = EditorGUIUtility.TrIconContent("TreeEditor.Duplicate", "Create a new profile and copy the content of the currently assigned profile.");
             public static readonly GUIContent iconCheckout = EditorGUIUtility.TrIconContent("editicon.sml", "Checkout the profile to enable edition.");
+            public static readonly GUIContent iconCheckedOut = EditorGUIUtility.TrIconContent("editicon.sml", "Asset is already checked out.");
         }
 
         SerializedProperty m_IsGlobal;
@@ -102,10 +103,14 @@ namespace UnityEditor.Rendering
             var assetIsNotNull = m_Profile.objectReferenceValue != null && !m_Profile.objectReferenceValue.Equals(null);
             var assetIsMultiEdit = m_Profile.hasMultipleDifferentValues;
             var enableSaveOrClone = assetIsNotNull;
-            var enableCheckout = VersionControl.Provider.isActive
+            var enableCheckout = Provider.isActive
                 && !assetIsMultiEdit
                 && assetIsNotNull
                 && !AssetDatabase.IsOpenForEdit(m_Profile.objectReferenceValue, StatusQueryOptions.UseCachedIfPossible);
+            var isCheckedOut = Provider.isActive
+                && !assetIsMultiEdit
+                && assetIsNotNull
+                && AssetDatabase.IsOpenForEdit(m_Profile.objectReferenceValue, StatusQueryOptions.UseCachedIfPossible);
             var showCheckout = Provider.isActive;
 
             // The layout system breaks alignment when mixing inspector fields with custom layout'd
@@ -212,7 +217,7 @@ namespace UnityEditor.Rendering
 
                 if (showCheckout)
                 {
-                    guiContent = Styles.iconCheckout;
+                    guiContent = isCheckedOut ? Styles.iconCheckedOut : Styles.iconCheckout;
                     using (new EditorGUI.DisabledScope(!enableCheckout))
                     {
                         if (GUI.Button(buttonCheckOutRect, guiContent, buttonCheckoutStyle))

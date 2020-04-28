@@ -106,16 +106,25 @@ namespace UnityEditor.Rendering
                 && !assetIsMultiEdit
                 && assetIsNotNull
                 && !AssetDatabase.IsOpenForEdit(m_Profile.objectReferenceValue, StatusQueryOptions.UseCachedIfPossible);
+            var showCheckout = Provider.isActive;
 
             // The layout system breaks alignment when mixing inspector fields with custom layout'd
             // fields, do the layout manually instead
 
             // Compute toolbar width and button styles
+            // We have two modes:
+            //  1. Version control is configured, then we show the Checkout button
+            //  2. Version control is not configured, then we don't show the Checkout button
             const int k_ButtonIconWidth = 30;
             var toolbarWidth = k_ButtonIconWidth * 3;
             var buttonNewStyle = EditorStyles.miniButton;
             var buttonSaveOrCloneStyle = EditorStyles.miniButtonMid;
             var buttonCheckoutStyle = EditorStyles.miniButtonRight;
+            if (!showCheckout)
+            {
+                buttonCheckoutStyle = EditorStyles.miniButtonRight;
+                toolbarWidth = k_ButtonIconWidth * 2;
+            }
 
             // Compute the rect of each button
             var indentOffset = EditorGUI.indentLevel * 15f;
@@ -201,13 +210,16 @@ namespace UnityEditor.Rendering
                     }
                 }
 
-                guiContent = Styles.iconCheckout;
-                using (new EditorGUI.DisabledScope(!enableCheckout))
+                if (showCheckout)
                 {
-                    if (GUI.Button(buttonCheckOutRect, guiContent, buttonCheckoutStyle))
+                    guiContent = Styles.iconCheckout;
+                    using (new EditorGUI.DisabledScope(!enableCheckout))
                     {
-                        Assert.True(Provider.isActive);
-                        Provider.Checkout(m_Profile.objectReferenceValue, CheckoutMode.Both);
+                        if (GUI.Button(buttonCheckOutRect, guiContent, buttonCheckoutStyle))
+                        {
+                            Assert.True(Provider.isActive);
+                            Provider.Checkout(m_Profile.objectReferenceValue, CheckoutMode.Both);
+                        }
                     }
                 }
             }
